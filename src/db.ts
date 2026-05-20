@@ -10,15 +10,20 @@ const isProduction = process.env.NODE_ENV === "production";
 const isNeonConnection = connectionString.includes("neon.tech");
 
 function normalizeConnectionStringForSsl(input: string): string {
+  const replacedByRegex = input.replace(
+    /([?&])sslmode=(require|prefer|verify-ca)(?=(&|$))/gi,
+    "$1sslmode=verify-full",
+  );
+
   try {
-    const url = new URL(input);
+    const url = new URL(replacedByRegex);
     const sslMode = url.searchParams.get("sslmode");
     if (sslMode && sslMode !== "verify-full") {
       url.searchParams.set("sslmode", "verify-full");
     }
     return url.toString();
   } catch {
-    return input;
+    return replacedByRegex;
   }
 }
 
