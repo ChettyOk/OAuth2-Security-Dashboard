@@ -17,6 +17,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "compression": "^1.8.1",
     "dotenv": "^17.4.2",
