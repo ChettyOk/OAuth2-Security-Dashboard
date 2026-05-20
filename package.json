@@ -7,7 +7,7 @@
     "dev": "tsx src/server.ts",
     "dev:frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build",
-    "vercel-build": "npm run build:frontend",
+    "vercel-build": "npm ci --prefix frontend && npm run build:frontend",
     "build": "npm run build:frontend && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",

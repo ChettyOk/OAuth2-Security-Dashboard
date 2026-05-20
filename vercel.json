@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npm run build:frontend",
+  "buildCommand": "npm run vercel-build",
   "functions": {
     "api/index.ts": {
       "runtime": "@vercel/node@3.2.26",
