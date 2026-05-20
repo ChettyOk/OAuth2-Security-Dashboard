@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "compression": "^1.8.1",
+    "connect-pg-simple": "^10.0.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",
+    "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.19.0",
     "@types/node": "^25.9.0",

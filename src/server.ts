@@ -3,6 +3,7 @@ import fs from "node:fs";
 import type { Server } from "node:http";
 import path from "node:path";
 import compression from "compression";
+import connectPgSimple from "connect-pg-simple";
 import dotenv from "dotenv";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -130,9 +131,17 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
 app.use(express.urlencoded({ extended: false, limit: "20kb" }));
 app.use(express.json({ limit: "20kb" }));
+const PgSessionStore = connectPgSimple(session);
 app.use(
   session({
     secret: env.SESSION_SECRET,
+    name: "oauth2.sid",
+    store: new PgSessionStore({
+      pool: db,
+      tableName: "user_sessions",
+      createTableIfMissing: false,
+      pruneSessionInterval: 60,
+    }),
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -519,6 +528,7 @@ app.use(async (req, res, next) => {
 });
 
 app.get("/dashboard/data", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   try {
     const sessionIssuedAt = req.session.cookie?.originalMaxAge
       ? new Date(Date.now() - (1000 * 60 * 60 * 12 - req.session.cookie.maxAge!)).toISOString()
@@ -1177,6 +1187,12 @@ app.get("/logout", (req, res) => {
   req.session.destroy(() => {
     logAuthEvent(userId, "session_logout", {}).catch((error) => {
       console.error("logout_event_logging_failed", error);
+    });
+    res.clearCookie("oauth2.sid", {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: sessionSecureCookie,
     });
     res.redirect("/app");
   });

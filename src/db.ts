@@ -110,6 +110,18 @@ export async function initDb(appBaseUrl: string): Promise<void> {
     );
   `);
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      sid varchar NOT NULL COLLATE "default" PRIMARY KEY,
+      sess json NOT NULL,
+      expire timestamp(6) NOT NULL
+    );
+  `);
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_expire
+    ON user_sessions(expire);
+  `);
+
   await db.query(
     `
       INSERT INTO oauth_clients (client_id, client_secret, redirect_uri, is_confidential)

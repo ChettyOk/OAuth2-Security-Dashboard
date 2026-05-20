@@ -45,7 +45,10 @@ function App() {
   )
 
   async function refreshDashboard() {
-    const response = await fetch('/dashboard/data')
+    const response = await fetch('/dashboard/data', {
+      cache: 'no-store',
+      credentials: 'include',
+    })
     if (!response.ok) {
       throw new Error(`Failed to load dashboard data (${response.status})`)
     }
@@ -200,6 +203,7 @@ function App() {
     }
     void refreshDashboard().catch((error) => {
       const message = error instanceof Error ? error.message : 'Dashboard load failed'
+      setDashboard(null)
       setApiOutput(message)
     })
   }, [mode])
