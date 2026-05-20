@@ -45,6 +45,7 @@ declare module "express-session" {
   interface SessionData {
     userId?: string;
     githubOAuthState?: string;
+    githubRedirectUri?: string;
     pendingAuthQuery?: string;
     latestAccessToken?: string;
     latestAccessTokenExpiresAt?: string;
@@ -184,6 +185,14 @@ async function upsertGithubUser(input: {
 }
 
 async function exchangeGithubCodeForToken(code: string): Promise<string> {
+  const redirectUri = `${env.APP_BASE_URL}/auth/github/callback`;
+  return exchangeGithubCodeForTokenWithRedirect(code, redirectUri);
+}
+
+async function exchangeGithubCodeForTokenWithRedirect(
+  code: string,
+  redirectUri: string,
+): Promise<string> {
   const response = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -191,7 +200,7 @@ async function exchangeGithubCodeForToken(code: string): Promise<string> {
       client_id: env.GITHUB_CLIENT_ID,
       client_secret: env.GITHUB_CLIENT_SECRET,
       code,
-      redirect_uri: `${env.APP_BASE_URL}/auth/github/callback`,
+      redirect_uri: redirectUri,
     }),
   });
 
@@ -205,6 +214,19 @@ async function exchangeGithubCodeForToken(code: string): Promise<string> {
   }
 
   return data.access_token;
+}
+
+function getRequestBaseUrl(req: express.Request): string {
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const proto = forwardedProto || req.protocol;
+  const host = forwardedHost || req.get("host");
+
+  if (!host) {
+    return env.APP_BASE_URL;
+  }
+
+  return `${proto}://${host}`;
 }
 
 async function fetchGithubIdentity(accessToken: string): Promise<{
@@ -594,13 +616,16 @@ app.get("/.well-known/openid-configuration", (_req, res) => {
 app.get("/login/github", oauthRateLimit, (req, res) => {
   const state = randomToken(24);
   req.session.githubOAuthState = state;
+  const redirectUri = `${getRequestBaseUrl(req)}/auth/github/callback`;
+  req.session.githubRedirectUri = redirectUri;
   void logAuthEvent(req.session.userId ?? null, "github_login_started", {
     hasSessionUser: Boolean(req.session.userId),
+    redirectUri,
   });
 
   const params = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
-    redirect_uri: `${env.APP_BASE_URL}/auth/github/callback`,
+    redirect_uri: redirectUri,
     scope: "read:user user:email",
     state,
   });
@@ -617,7 +642,8 @@ app.get("/auth/github/callback", async (req, res) => {
       return;
     }
 
-    const githubAccessToken = await exchangeGithubCodeForToken(code);
+    const redirectUri = req.session.githubRedirectUri ?? `${env.APP_BASE_URL}/auth/github/callback`;
+    const githubAccessToken = await exchangeGithubCodeForTokenWithRedirect(code, redirectUri);
     const githubIdentity = await fetchGithubIdentity(githubAccessToken);
     const userId = await upsertGithubUser({
       githubId: githubIdentity.id,
@@ -629,6 +655,7 @@ app.get("/auth/github/callback", async (req, res) => {
 
     req.session.userId = userId;
     req.session.githubOAuthState = undefined;
+    req.session.githubRedirectUri = undefined;
     await logAuthEvent(userId, "github_login_completed", {
       githubLogin: githubIdentity.login,
     });

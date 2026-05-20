@@ -9,9 +9,24 @@ if (!connectionString) {
 const isProduction = process.env.NODE_ENV === "production";
 const isNeonConnection = connectionString.includes("neon.tech");
 
+function normalizeConnectionStringForSsl(input: string): string {
+  try {
+    const url = new URL(input);
+    const sslMode = url.searchParams.get("sslmode");
+    if (sslMode && sslMode !== "verify-full") {
+      url.searchParams.set("sslmode", "verify-full");
+    }
+    return url.toString();
+  } catch {
+    return input;
+  }
+}
+
+const normalizedConnectionString = normalizeConnectionStringForSsl(connectionString);
+
 export const db = new Pool({
-  connectionString,
-  ssl: isProduction || isNeonConnection ? { rejectUnauthorized: false } : undefined,
+  connectionString: normalizedConnectionString,
+  ssl: isProduction || isNeonConnection ? { rejectUnauthorized: true } : undefined,
 });
 
 export async function initDb(appBaseUrl: string): Promise<void> {
