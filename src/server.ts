@@ -480,111 +480,119 @@ app.get("/readyz", async (_req, res) => {
 });
 
 app.get("/dashboard/data", async (req, res) => {
-  const sessionIssuedAt = req.session.cookie?.originalMaxAge
-    ? new Date(Date.now() - (1000 * 60 * 60 * 12 - req.session.cookie.maxAge!)).toISOString()
-    : new Date().toISOString();
+  try {
+    const sessionIssuedAt = req.session.cookie?.originalMaxAge
+      ? new Date(Date.now() - (1000 * 60 * 60 * 12 - req.session.cookie.maxAge!)).toISOString()
+      : new Date().toISOString();
 
-  if (!req.session.userId) {
+    if (!req.session.userId) {
+      res.json({
+        signedIn: false,
+        appBaseUrl: env.APP_BASE_URL,
+        sessionIssuedAt,
+        latestToken: null,
+        latestRefreshToken: null,
+        events: [],
+      });
+      return;
+    }
+
+    const { rows: users } = await db.query<{
+      login: string;
+      email: string | null;
+      avatar_url: string | null;
+    }>("SELECT login, email, avatar_url FROM users WHERE id = $1;", [req.session.userId]);
+
+    const { rows: tokens } = await db.query<{
+      token: string;
+      scope: string;
+      expires_at: Date;
+    }>(
+      `
+        SELECT token, scope, expires_at
+        FROM access_tokens
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1;
+      `,
+      [req.session.userId],
+    );
+
+    const { rows: refreshTokens } = await db.query<{
+      token: string;
+      scope: string;
+      expires_at: Date;
+    }>(
+      `
+        SELECT token, scope, expires_at
+        FROM refresh_tokens
+        WHERE user_id = $1 AND revoked_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1;
+      `,
+      [req.session.userId],
+    );
+
+    const { rows: events } = await db.query<{
+      event_type: string;
+      details: Record<string, unknown>;
+      created_at: Date;
+    }>(
+      `
+        SELECT event_type, details, created_at
+        FROM auth_events
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 20;
+      `,
+      [req.session.userId],
+    );
+
+    const latest = tokens[0];
+    const latestRefresh = refreshTokens[0];
+    req.session.latestAccessToken = latest?.token;
+    req.session.latestAccessTokenExpiresAt = latest?.expires_at.toISOString();
+    req.session.latestRefreshToken = latestRefresh?.token;
+    req.session.latestRefreshTokenExpiresAt = latestRefresh?.expires_at.toISOString();
+
     res.json({
-      signedIn: false,
+      signedIn: true,
       appBaseUrl: env.APP_BASE_URL,
       sessionIssuedAt,
-      latestToken: null,
-      latestRefreshToken: null,
-      events: [],
+      user: {
+        login: users[0]?.login ?? "unknown",
+        email: users[0]?.email ?? null,
+        avatarUrl: users[0]?.avatar_url ?? null,
+      },
+      latestToken: latest
+        ? {
+            value: latest.token,
+            preview: `${latest.token.slice(0, 8)}...${latest.token.slice(-6)}`,
+            scope: latest.scope,
+            expiresAt: latest.expires_at.toISOString(),
+          }
+        : null,
+      latestRefreshToken: latestRefresh
+        ? {
+            value: latestRefresh.token,
+            preview: `${latestRefresh.token.slice(0, 8)}...${latestRefresh.token.slice(-6)}`,
+            scope: latestRefresh.scope,
+            expiresAt: latestRefresh.expires_at.toISOString(),
+          }
+        : null,
+      events: events.map((event) => ({
+        type: event.event_type,
+        details: event.details,
+        createdAt: event.created_at.toISOString(),
+      })),
     });
-    return;
+  } catch (error) {
+    console.error("dashboard_data_failed", error);
+    res.status(503).json({
+      error: "dashboard_data_unavailable",
+      message: "Unable to load dashboard data right now.",
+    });
   }
-
-  const { rows: users } = await db.query<{
-    login: string;
-    email: string | null;
-    avatar_url: string | null;
-  }>("SELECT login, email, avatar_url FROM users WHERE id = $1;", [req.session.userId]);
-
-  const { rows: tokens } = await db.query<{
-    token: string;
-    scope: string;
-    expires_at: Date;
-  }>(
-    `
-      SELECT token, scope, expires_at
-      FROM access_tokens
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-      LIMIT 1;
-    `,
-    [req.session.userId],
-  );
-
-  const { rows: refreshTokens } = await db.query<{
-    token: string;
-    scope: string;
-    expires_at: Date;
-  }>(
-    `
-      SELECT token, scope, expires_at
-      FROM refresh_tokens
-      WHERE user_id = $1 AND revoked_at IS NULL
-      ORDER BY created_at DESC
-      LIMIT 1;
-    `,
-    [req.session.userId],
-  );
-
-  const { rows: events } = await db.query<{
-    event_type: string;
-    details: Record<string, unknown>;
-    created_at: Date;
-  }>(
-    `
-      SELECT event_type, details, created_at
-      FROM auth_events
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-      LIMIT 20;
-    `,
-    [req.session.userId],
-  );
-
-  const latest = tokens[0];
-  const latestRefresh = refreshTokens[0];
-  req.session.latestAccessToken = latest?.token;
-  req.session.latestAccessTokenExpiresAt = latest?.expires_at.toISOString();
-  req.session.latestRefreshToken = latestRefresh?.token;
-  req.session.latestRefreshTokenExpiresAt = latestRefresh?.expires_at.toISOString();
-
-  res.json({
-    signedIn: true,
-    appBaseUrl: env.APP_BASE_URL,
-    sessionIssuedAt,
-    user: {
-      login: users[0]?.login ?? "unknown",
-      email: users[0]?.email ?? null,
-      avatarUrl: users[0]?.avatar_url ?? null,
-    },
-    latestToken: latest
-      ? {
-          value: latest.token,
-          preview: `${latest.token.slice(0, 8)}...${latest.token.slice(-6)}`,
-          scope: latest.scope,
-          expiresAt: latest.expires_at.toISOString(),
-        }
-      : null,
-    latestRefreshToken: latestRefresh
-      ? {
-          value: latestRefresh.token,
-          preview: `${latestRefresh.token.slice(0, 8)}...${latestRefresh.token.slice(-6)}`,
-          scope: latestRefresh.scope,
-          expiresAt: latestRefresh.expires_at.toISOString(),
-        }
-      : null,
-    events: events.map((event) => ({
-      type: event.event_type,
-      details: event.details,
-      createdAt: event.created_at.toISOString(),
-    })),
-  });
 });
 
 app.get("/client/callback", (_req, res) => {
