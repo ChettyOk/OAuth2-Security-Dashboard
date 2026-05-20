@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build:frontend",
+  "functions": {
+    "api/index.ts": {
+      "runtime": "@vercel/node@3.2.26",
+      "includeFiles": "frontend/dist/**",
+      "maxDuration": 10
+    }
+  },
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.ts"
+    }
+  ]
+}
