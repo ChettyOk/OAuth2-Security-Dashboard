@@ -69,6 +69,7 @@ let signingPublicJwk:
       n?: string;
     } & { kid: string; alg: "ES256"; use: "sig" })
   | undefined;
+let runtimeInitializationPromise: Promise<void> | undefined;
 
 async function ensureSigningKeys(): Promise<void> {
   if (signingPrivateKey && signingPublicKey && signingPublicJwk) {
@@ -93,6 +94,29 @@ async function ensureSigningKeys(): Promise<void> {
     alg: "ES256",
     use: "sig",
   };
+}
+
+async function initializeRuntime(): Promise<void> {
+  await ensureSigningKeys();
+  const maxAttempts = env.NODE_ENV === "production" ? 8 : 20;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await initDb(env.APP_BASE_URL);
+      return;
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+}
+
+function ensureRuntimeInitialized(): Promise<void> {
+  if (!runtimeInitializationPromise) {
+    runtimeInitializationPromise = initializeRuntime();
+  }
+  return runtimeInitializationPromise;
 }
 
 const oauthRateLimit = rateLimit({
@@ -479,6 +503,21 @@ app.get("/readyz", async (_req, res) => {
   }
 });
 
+app.use(async (req, res, next) => {
+  const bypassPrefixes = ["/assets", "/healthz"];
+  if (bypassPrefixes.some((prefix) => req.path.startsWith(prefix))) {
+    next();
+    return;
+  }
+
+  try {
+    await ensureRuntimeInitialized();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/dashboard/data", async (req, res) => {
   try {
     const sessionIssuedAt = req.session.cookie?.originalMaxAge
@@ -621,12 +660,12 @@ app.get("/.well-known/openid-configuration", (_req, res) => {
   });
 });
 
-app.get("/login/github", oauthRateLimit, (req, res) => {
+app.get("/login/github", oauthRateLimit, async (req, res) => {
   const state = randomToken(24);
   req.session.githubOAuthState = state;
   const redirectUri = `${getRequestBaseUrl(req)}/auth/github/callback`;
   req.session.githubRedirectUri = redirectUri;
-  void logAuthEvent(req.session.userId ?? null, "github_login_started", {
+  await logAuthEvent(req.session.userId ?? null, "github_login_started", {
     hasSessionUser: Boolean(req.session.userId),
     redirectUri,
   });
@@ -1136,28 +1175,15 @@ app.post("/oauth/revoke-latest", async (req, res) => {
 app.get("/logout", (req, res) => {
   const userId = req.session.userId ?? null;
   req.session.destroy(() => {
-    void logAuthEvent(userId, "session_logout", {});
+    logAuthEvent(userId, "session_logout", {}).catch((error) => {
+      console.error("logout_event_logging_failed", error);
+    });
     res.redirect("/app");
   });
 });
 
 async function start(): Promise<void> {
-  await ensureSigningKeys();
-  const maxAttempts = 20;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      await initDb(env.APP_BASE_URL);
-      break;
-    } catch (error) {
-      if (attempt === maxAttempts) {
-        throw error;
-      }
-      console.warn(
-        `Database not ready (attempt ${attempt}/${maxAttempts}), retrying in 2s...`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-  }
+  await ensureRuntimeInitialized();
   const port = Number(env.PORT);
   const server: Server = app.listen(port, () => {
     console.log(`OAuth2 demo running on ${env.APP_BASE_URL}`);
