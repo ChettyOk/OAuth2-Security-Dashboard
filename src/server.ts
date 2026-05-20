@@ -30,7 +30,14 @@ const envSchema = z.object({
   GITHUB_CLIENT_SECRET: z.string().min(1),
 });
 
-const env = envSchema.parse(process.env);
+const inferredAppBaseUrl =
+  process.env.APP_BASE_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
+
+const env = envSchema.parse({
+  ...process.env,
+  APP_BASE_URL: inferredAppBaseUrl,
+});
 const isProduction = env.NODE_ENV === "production";
 const sessionSecureCookie = env.SESSION_SECURE_COOKIE ?? isProduction;
 
