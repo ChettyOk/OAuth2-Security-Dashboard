@@ -350,26 +350,30 @@ Postgres -> users/tokens/events`}</pre>
           {!dashboard?.events?.length ? (
             <p className="muted">No events yet.</p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Event</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.events.map((event) => (
-                  <tr key={`${event.type}-${event.createdAt}`}>
-                    <td>{new Date(event.createdAt).toLocaleTimeString()}</td>
-                    <td>{event.type}</td>
-                    <td>
-                      <code>{JSON.stringify(event.details)}</code>
-                    </td>
+            <div className="events-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Event</th>
+                    <th>Details</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {dashboard.events.map((event) => (
+                    <tr key={`${event.type}-${event.createdAt}`}>
+                      <td>{new Date(event.createdAt).toLocaleTimeString()}</td>
+                      <td>{event.type}</td>
+                      <td>
+                        <pre className="event-details">
+                          {JSON.stringify(event.details, null, 2)}
+                        </pre>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </article>
       </section>
